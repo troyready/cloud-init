@@ -34,13 +34,14 @@ LOG = logging.getLogger(__name__)
 DEF_MD_URL = "http://169.254.169.254"
 
 # Which version we are requesting of the ec2 metadata apis
-DEF_MD_VERSION = '2009-04-04'
+DEF_MD_VERSION = 'latest'
 
 # Default metadata urls that will be used if none are provided
 # They will be checked for 'resolveability' and some of the
 # following may be discarded if they do not resolve
 DEF_MD_URLS = [DEF_MD_URL, "http://instance-data.:8773"]
 
+DEF_MD_SERVICES_DOMAIN = 'amazonaws.com'
 
 class DataSourceEc2(sources.DataSource):
     def __init__(self, sys_cfg, distro, paths):
@@ -65,6 +66,8 @@ class DataSourceEc2(sources.DataSource):
                 self.metadata_address)
             self.metadata = ec2.get_instance_metadata(self.api_ver,
                                                       self.metadata_address)
+            self.identity = ec2.get_instance_identity(
+                self.api_ver, self.metadata_address)['document']
             LOG.debug("Crawl of metadata service took %s seconds",
                        int(time.time() - start_time))
             return True
@@ -80,7 +83,11 @@ class DataSourceEc2(sources.DataSource):
         return self.metadata.get('ami-launch-index')
 
     def get_instance_id(self):
-        return self.metadata['instance-id']
+        """Prefer the ID from the instance identity document, but fall back."""
+        instance_id = self.identity.get('instanceId')
+        if not instance_id:
+            instance_id = self.metadata.get('instance-id')
+        return instance_id
 
     def _get_url_settings(self):
         mcfg = self.ds_cfg
@@ -170,15 +177,19 @@ class DataSourceEc2(sources.DataSource):
             return None
 
         ofound = found
-        if not found.startswith("/"):
+        if not os.path.isabs(found):
             found = "/dev/%s" % found
+
+        # Resolve symlink, if any
+        found = os.path.realpath(found)
 
         if os.path.exists(found):
             return found
 
-        remapped = self._remap_device(os.path.basename(found))
+        # If we still haven't found the real device, try the remap function
+        remapped = self._remap_device(os.path.basename(ofound))
         if remapped:
-            LOG.debug("Remapped device name %s => %s", found, remapped)
+            LOG.debug("Remapped device name %s => %s", ofound, remapped)
             return remapped
 
         # On t1.micro, ephemeral0 will appear in block-device-mapping from
@@ -193,9 +204,31 @@ class DataSourceEc2(sources.DataSource):
     @property
     def availability_zone(self):
         try:
-            return self.metadata['placement']['availability-zone']
+            az = self.identity.get('availabilityZone')
+            if not az:
+                az = self.metadata['placement']['availability-zone']
+            return az
         except KeyError:
             return None
+
+    @property
+    def region(self):
+        try:
+            region = self.identity.get('region')
+            # There is no guarantee that the availability zone will be
+            # region + letter, but it is still a good fallback.
+            if not region:
+                region = self.availability_zone()[:-1]
+            return region
+        except KeyError:
+            return None
+
+    @property
+    def services_domain(self):
+        try:
+            return self.metadata['services']['domain']
+        except KeyError:
+            return DEF_MD_SERVICES_DOMAIN
 
 # Used to match classes to dependencies
 datasources = [

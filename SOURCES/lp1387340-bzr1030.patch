@@ -1,0 +1,13 @@
+=== modified file 'cloudinit/util.py'
+--- a/cloudinit/util.py	2014-09-30 20:24:54 +0000
++++ b/cloudinit/util.py	2014-10-29 19:39:04 +0000
+@@ -1146,7 +1146,7 @@
+ # this returns the specific 'mode' entry, cleanly formatted, with value
+ def get_output_cfg(cfg, mode):
+     ret = [None, None]
+-    if cfg or 'output' not in cfg:
++    if not cfg or 'output' not in cfg:
+         return ret
+ 
+     outcfg = cfg['output']
+

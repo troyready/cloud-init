@@ -2,9 +2,11 @@
 #
 #    Copyright (C) 2009-2010 Canonical Ltd.
 #    Copyright (C) 2012, 2013 Hewlett-Packard Development Company, L.P.
+#    Copyright (C) 2014 Amazon.com, Inc. or its affiliates.
 #
 #    Author: Scott Moser <scott.moser@canonical.com>
 #    Author: Juerg Haefliger <juerg.haefliger@hp.com>
+#    Author: Andrew Jorgensen <ajorgens@amazon.com>
 #
 #    This program is free software: you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License version 3, as
@@ -136,14 +138,10 @@ def handle(_name, cfg, cloud, log, args):
         util.write_file(ssh_util.DEF_SSHD_CFG, "\n".join(lines))
 
         try:
-            cmd = cloud.distro.init_cmd  # Default service
-            cmd.append(cloud.distro.get_option('ssh_svcname', 'ssh'))
-            cmd.append('restart')
-            if 'systemctl' in cmd:  # Switch action ordering
-                cmd[1], cmd[2] = cmd[2], cmd[1]
-            cmd = filter(None, cmd)  # Remove empty arguments
-            util.subp(cmd)
-            log.debug("Restarted the ssh daemon")
+            service = cloud.distro.get_option('ssh_svcname', 'ssh')
+            if cloud.distro.service_running(service):
+                cloud.distro.service_control(service, 'restart')
+                log.debug("Restarted the ssh daemon")
         except:
             util.logexc(log, "Restarting of the ssh daemon failed")
 

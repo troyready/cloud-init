@@ -3,10 +3,13 @@
 #    Copyright (C) 2012 Canonical Ltd.
 #    Copyright (C) 2012, 2013 Hewlett-Packard Development Company, L.P.
 #    Copyright (C) 2012 Yahoo! Inc.
+#    Copyright (C) 2014 Amazon.com, Inc. or its affiliates.
 #
 #    Author: Scott Moser <scott.moser@canonical.com>
 #    Author: Juerg Haefliger <juerg.haefliger@hp.com>
 #    Author: Joshua Harlow <harlowja@yahoo-inc.com>
+#    Author: Andrew Jorgensen <ajorgens@amazon.com>
+#    Author: Ian Weller <iweller@amazon.com>
 #
 #    This program is free software: you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License version 3, as
@@ -22,6 +25,7 @@
 
 from StringIO import StringIO
 
+import base64
 import contextlib
 import copy as obj_copy
 import ctypes
@@ -72,6 +76,8 @@ FN_ALLOWED = ('_-.()' + string.digits + string.ascii_letters)
 # Helper utils to see if running in a container
 CONTAINER_TESTS = ['running-in-container', 'lxc-is-container']
 
+# An imperfect, but close enough regex to detect Base64 encoding
+BASE64 = re.compile('^[A-Za-z0-9+/\-_\n]+=?=?$')
 
 class ProcessExecutionError(IOError):
 
@@ -164,6 +170,10 @@ class SeLinuxGuard(object):
 
 
 class MountFailedError(Exception):
+    pass
+
+
+class DecodingError(Exception):
     pass
 
 
@@ -292,6 +302,21 @@ def clean_filename(fn):
         fn = fn.replace(k, '')
     fn = fn.strip()
     return fn
+
+
+def decode_base64(data, quiet=True):
+    try:
+        # Some builds of python don't throw an exception when the data is not
+        # proper Base64, so we check it first.
+        if BASE64.match(data):
+            return base64.urlsafe_b64decode(data)
+        else:
+            return data
+    except Exception as e:
+        if quiet:
+            return data
+        else:
+            raise DecodingError(str(e))
 
 
 def decomp_gzip(data, quiet=True):
@@ -614,7 +639,9 @@ def runparts(dirp, skip_no_exist=True, exe_prefix=None):
         if os.path.isfile(exe_path) and os.access(exe_path, os.X_OK):
             attempted.append(exe_path)
             try:
-                subp(prefix + [exe_path], capture=False)
+                # Use shell=True so that if the user omits the #!, there is
+                # still some chance it will succeed.
+                subp(prefix + [exe_path], capture=False, shell=True)
             except ProcessExecutionError as e:
                 logexc(LOG, "Failed running %s [%s]", exe_path, e.exit_code)
                 failed.append(e)
@@ -990,7 +1017,8 @@ def search_for_mirror(candidates):
     """
     for cand in candidates:
         try:
-            if is_resolvable_url(cand):
+            # Allow either a proper URL or a bare hostname / IP
+            if is_resolvable_url(cand) or is_resolvable(cand):
                 return cand
         except Exception:
             pass
@@ -1146,7 +1174,7 @@ def chownbyname(fname, user=None, group=None):
 # this returns the specific 'mode' entry, cleanly formatted, with value
 def get_output_cfg(cfg, mode):
     ret = [None, None]
-    if cfg or 'output' not in cfg:
+    if not cfg or 'output' not in cfg:
         return ret
 
     outcfg = cfg['output']
@@ -1514,7 +1542,7 @@ def write_file(filename, content, mode=0644, omode="wb"):
     @param omode: The open mode used when opening the file (r, rb, a, etc.)
     """
     ensure_dir(os.path.dirname(filename))
-    LOG.debug("Writing to %s - %s: [%s] %s bytes",
+    LOG.debug("Writing to %s - %s: [%o] %s bytes",
                filename, omode, mode, len(content))
     with SeLinuxGuard(path=filename):
         with open(filename, omode) as fh:
@@ -1538,7 +1566,9 @@ def delete_dir_contents(dirname):
 
 
 def subp(args, data=None, rcs=None, env=None, capture=True, shell=False,
-         logstring=False):
+         close_stdin=False, pipe_cat=False, logstring=False):
+    if data and close_stdin:
+        raise ValueError('Incompatible parameters: data and close_stdin')
     if rcs is None:
         rcs = [0]
     try:
@@ -1557,10 +1587,25 @@ def subp(args, data=None, rcs=None, env=None, capture=True, shell=False,
             stdout = subprocess.PIPE
             stderr = subprocess.PIPE
         stdin = subprocess.PIPE
-        sp = subprocess.Popen(args, stdout=stdout,
-                        stderr=stderr, stdin=stdin,
-                        env=env, shell=shell)
-        (out, err) = sp.communicate(data)
+        # Some processes are less chatty when piped through cat, because they
+        # won't detect a terminal (yum being a prime example).
+        if pipe_cat:
+            cat = subprocess.Popen('cat', stdout=stdout, stderr=stderr,
+                                   stdin=subprocess.PIPE)
+            sp = subprocess.Popen(args, stdout=cat.stdin,
+                                  stderr=stderr, stdin=stdin,
+                                  env=env, shell=shell)
+            if close_stdin:
+                sp.stdin.close()
+            (_out, err) = sp.communicate(data)
+            (out, _err) = cat.communicate()
+        else:
+            sp = subprocess.Popen(args, stdout=stdout,
+                            stderr=stderr, stdin=stdin,
+                            env=env, shell=shell)
+            if close_stdin:
+                sp.stdin.close()
+            (out, err) = sp.communicate(data)
     except OSError as e:
         raise ProcessExecutionError(cmd=args, reason=e)
     rc = sp.returncode
@@ -2007,3 +2052,36 @@ def human2bytes(size):
         raise ValueError("'%s': cannot be negative" % size_in)
 
     return int(num * mpliers[mplier])
+
+
+def dictpath(obj, path, separator='/'):
+    """
+    Returns the element at a given path in a nested dictionary/list
+    object.
+
+    If the object is a dictionary, the path element is a string key. If
+    the object is a list, the path element is an index.
+
+    For instance, given the following object:
+
+        {"hello": "world",
+         "days": ["Monday", "Wednesday", "Friday"]}
+
+    dictpath(obj, "days/-1") would return "Friday".
+
+    This function deliberately does not catch any exceptions.
+    """
+
+    for element in path.split(separator):
+        # handle empty elements (for instance, if the path starts with
+        # the separator)
+        if not element:
+            continue
+
+        if isinstance(obj, dict):
+            obj = obj[element]
+        elif isinstance(obj, (list, tuple)):
+            index = int(element)
+            obj = obj[index]
+
+    return obj

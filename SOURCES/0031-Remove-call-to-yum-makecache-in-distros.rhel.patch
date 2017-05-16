@@ -1,0 +1,43 @@
+From 006a567ff7cd26cc4ff60b447b442e3cb362d02c Mon Sep 17 00:00:00 2001
+From: Ian Weller <iweller@amazon.com>
+Date: Thu, 18 Aug 2016 11:53:44 -0700
+Subject: [PATCH 31/31] Remove call to "yum makecache" in distros.rhel
+
+update_package_sources is designed to be the "apt-get update" step as
+opposed to the "apt-get upgrade" on dpkg-based distributions. yum
+performs an automatic metadata update when no metadata is available or
+when cached metadata is sufficiently old.
+
+"yum makecache" additionally downloads _all_ available metadata,
+including the filelists database, while yum's update / upgrade /
+distro-sync / etc. commands download only the required metadata for that
+transaction.
+
+Reviewed-by: Ben Cressey <bcressey@amazon.com>
+Reviewed-by: Sean Kelly <seankell@amazon.com>
+---
+ cloudinit/distros/rhel.py | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/cloudinit/distros/rhel.py b/cloudinit/distros/rhel.py
+index f2d9449..7e46106 100644
+--- a/cloudinit/distros/rhel.py
++++ b/cloudinit/distros/rhel.py
+@@ -9,6 +9,7 @@
+ #    Author: Juerg Haefliger <juerg.haefliger@hp.com>
+ #    Author: Joshua Harlow <harlowja@yahoo-inc.com>
+ #    Author: Andrew Jorgensen <ajorgens@amazon.com>
++#    Author: Ian Weller <iweller@amazon.com>
+ #
+ #    This program is free software: you can redistribute it and/or modify
+ #    it under the terms of the GNU General Public License version 3, as
+@@ -210,5 +211,4 @@ class Distro(distros.Distro):
+         util.subp(cmd, capture=False, pipe_cat=True, close_stdin=True)
+ 
+     def update_package_sources(self):
+-        self._runner.run("update-sources", self.package_command,
+-                         ["makecache"], freq=PER_INSTANCE)
++        return None
+-- 
+2.7.4
+

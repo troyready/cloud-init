@@ -1,0 +1,84 @@
+From b613a46a4281d3e329bcd3c526b010507d0d25d5 Mon Sep 17 00:00:00 2001
+From: Andrew Jorgensen <ajorgens@amazon.com>
+Date: Fri, 5 Dec 2014 16:31:00 -0800
+Subject: [PATCH] Repair mounts module
+
+Fixed typo in log message.
+Skip also if the device is not present (instead of only if the target isn't specified).
+Resolve intervening symlinks in device nodes.
+
+Reviewed-by: Ben Cressey <bcressey@amazon.com>
+Reviewed-by: Frank Becker <becke@amazon.de>
+[ajorgens@amazon.com: Resolve intervening symlinks]
+Reviewed-by: Matt Nierzwicki <nierzwic@amazon.com>
+Reviewed-by: Ethan Faust <efaust@amazon.com>
+---
+ cloudinit/config/cc_mounts.py      |  7 ++++---
+ cloudinit/sources/DataSourceEc2.py | 10 +++++++---
+ 2 files changed, 11 insertions(+), 6 deletions(-)
+
+diff --git a/cloudinit/config/cc_mounts.py b/cloudinit/config/cc_mounts.py
+index 1cb1e83..fb7949d 100644
+--- a/cloudinit/config/cc_mounts.py
++++ b/cloudinit/config/cc_mounts.py
+@@ -2,9 +2,11 @@
+ #
+ #    Copyright (C) 2009-2010 Canonical Ltd.
+ #    Copyright (C) 2012 Hewlett-Packard Development Company, L.P.
++#    Copyright (C) 2014-2015 Amazon.com, Inc. or its affiliates.
+ #
+ #    Author: Scott Moser <scott.moser@canonical.com>
+ #    Author: Juerg Haefliger <juerg.haefliger@hp.com>
++#    Author: Andrew Jorgensen <ajorgens@amazon.com>
+ #
+ #    This program is free software: you can redistribute it and/or modify
+ #    it under the terms of the GNU General Public License version 3, as
+@@ -251,8 +253,7 @@ def handle(_name, cfg, cloud, log, _args):
+         start = str(cfgmnt[i][0])
+         sanitized = sanitize_devname(start, cloud.device_name_to_device, log)
+         if sanitized is None:
+-            log.debug("Ignorming nonexistant named mount %s", start)
+-            continue
++            log.debug("Ignoring nonexistent named mount %s", start)
+ 
+         if sanitized != start:
+             log.debug("changed %s => %s" % (start, sanitized))
+@@ -310,7 +311,7 @@ def handle(_name, cfg, cloud, log, _args):
+     # if the second field is None (not the string, the value) we skip it
+     actlist = []
+     for x in cfgmnt:
+-        if x[1] is None:
++        if None in (x[0], x[1]):
+             log.debug("Skipping non-existent device named %s", x[0])
+         else:
+             actlist.append(x)
+diff --git a/cloudinit/sources/DataSourceEc2.py b/cloudinit/sources/DataSourceEc2.py
+index 74b0bb7..4f9c15d 100644
+--- a/cloudinit/sources/DataSourceEc2.py
++++ b/cloudinit/sources/DataSourceEc2.py
+@@ -177,15 +177,19 @@ class DataSourceEc2(sources.DataSource):
+             return None
+ 
+         ofound = found
+-        if not found.startswith("/"):
++        if not os.path.isabs(found):
+             found = "/dev/%s" % found
+ 
++        # Resolve symlink, if any
++        found = os.path.realpath(found)
++
+         if os.path.exists(found):
+             return found
+ 
+-        remapped = self._remap_device(os.path.basename(found))
++        # If we still haven't found the real device, try the remap function
++        remapped = self._remap_device(os.path.basename(ofound))
+         if remapped:
+-            LOG.debug("Remapped device name %s => %s", found, remapped)
++            LOG.debug("Remapped device name %s => %s", ofound, remapped)
+             return remapped
+ 
+         # On t1.micro, ephemeral0 will appear in block-device-mapping from
+-- 
+2.1.0
+

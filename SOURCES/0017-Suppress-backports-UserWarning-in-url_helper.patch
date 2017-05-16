@@ -1,0 +1,54 @@
+From 5190b4349a91b6da556a96887f5e5d4837b878d7 Mon Sep 17 00:00:00 2001
+From: Andrew Jorgensen <ajorgens@amazon.com>
+Date: Wed, 5 Mar 2014 12:24:05 -0800
+Subject: [PATCH] Suppress backports UserWarning in url_helper
+
+Suppresses this warning:
+/usr/lib/python2.6/site-packages/cloudinit/url_helper.py:40: UserWarning: Module backports was already imported from /usr/lib64/python2.6/site-packages/backports/__init__.pyc, but /usr/lib/python2.6/site-packages is being added to sys.path
+  import pkg_resources
+
+Reviewed-by: Tom Kirchner <tjk@amazon.com>
+Reviewed-by: Matt Nierzwicki <nierzwic@amazon.com>
+---
+ cloudinit/url_helper.py | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/cloudinit/url_helper.py b/cloudinit/url_helper.py
+index 3074dd0..8de4fa8 100644
+--- a/cloudinit/url_helper.py
++++ b/cloudinit/url_helper.py
+@@ -3,10 +3,12 @@
+ #    Copyright (C) 2012 Canonical Ltd.
+ #    Copyright (C) 2012 Hewlett-Packard Development Company, L.P.
+ #    Copyright (C) 2012 Yahoo! Inc.
++#    Copyright (C) 2014 Amazon.com, Inc. or its affiliates.
+ #
+ #    Author: Scott Moser <scott.moser@canonical.com>
+ #    Author: Juerg Haefliger <juerg.haefliger@hp.com>
+ #    Author: Joshua Harlow <harlowja@yahoo-inc.com>
++#    Author: Andrew Jorgensen <ajorgens@amazon.com>
+ #
+ #    This program is free software: you can redistribute it and/or modify
+ #    it under the terms of the GNU General Public License version 3, as
+@@ -23,6 +25,7 @@
+ import httplib
+ import time
+ import urllib
++import warnings
+ 
+ import requests
+ from requests import exceptions
+@@ -42,7 +45,9 @@ CONFIG_ENABLED = False  # This was added in 0.7 (but taken out in >=1.0)
+ _REQ_VER = None
+ try:
+     from distutils.version import LooseVersion
+-    import pkg_resources
++    with warning.catch_warnings():
++        warnings.simplefilter("ignore", UserWarning)
++        import pkg_resources
+     _REQ = pkg_resources.get_distribution('requests')
+     _REQ_VER = LooseVersion(_REQ.version)
+     if _REQ_VER >= LooseVersion('0.8.8'):
+-- 
+2.1.0
+

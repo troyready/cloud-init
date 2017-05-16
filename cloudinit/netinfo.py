@@ -24,7 +24,7 @@ import cloudinit.util as util
 from cloudinit.log import logging
 import re
 
-from prettytable import PrettyTable
+from cloudinit.simpletable import SimpleTable as PrettyTable
 
 LOG = logging.getLogger()
 

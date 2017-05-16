@@ -31,7 +31,7 @@ LOG = logging.getLogger(__name__)
 class Distro(distros.Distro):
     locale_conf_fn = "/etc/locale.gen"
     network_conf_fn = "/etc/conf.d/net"
-    init_cmd = ['']  # init scripts
+    init_cmd = None  # init scripts
 
     def __init__(self, name, cfg, paths):
         distros.Distro.__init__(self, name, cfg, paths)
@@ -96,13 +96,6 @@ class Distro(distros.Distro):
             return distros.Distro._bring_up_interfaces(self, devices)
         else:
             return distros.Distro._bring_up_interfaces(self, device_names)
-
-    def _select_hostname(self, hostname, fqdn):
-        # Prefer the short hostname over the long
-        # fully qualified domain name
-        if not hostname:
-            return fqdn
-        return hostname
 
     def _write_hostname(self, your_hostname, out_fn):
         conf = None

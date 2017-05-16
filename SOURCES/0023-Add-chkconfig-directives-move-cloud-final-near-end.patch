@@ -1,0 +1,92 @@
+From 4d4ef1124ee71b6637c2b68f266938a9e3263301 Mon Sep 17 00:00:00 2001
+From: Andrew Jorgensen <ajorgens@amazon.com>
+Date: Thu, 1 May 2014 11:38:30 -0700
+Subject: [PATCH] Add chkconfig directives; move cloud-final near end
+
+chkconfig does not support the $all system facility that insserv uses to push
+this to the end of the boot process, so we need chkconfig hints as well.
+
+Also, there's a bug in ntsysv that goes undetected because almost no init
+scripts lack these directive comments. If you run ntsysv and then exit (even
+without doing anything!) init scripts that lack these directives can be reset
+to -1, which isn't even a real rc priority.
+
+Reviewed-by: James Anderson <jamieand@amazon.com>
+Reviewed-by: Tom Kirchner <tjk@amazon.com>
+[ajorgens@amazon.com: Add chkconfig directives to work around bug in ntsysv]
+Reviewed-by: Jason Green <jasg@amazon.com>
+Reviewed-by: Tom Kirchner <tjk@amazon.com>
+---
+ sysvinit/redhat/cloud-config     | 7 ++++++-
+ sysvinit/redhat/cloud-final      | 7 ++++++-
+ sysvinit/redhat/cloud-init       | 7 ++++++-
+ sysvinit/redhat/cloud-init-local | 7 ++++++-
+ 4 files changed, 24 insertions(+), 4 deletions(-)
+
+diff --git a/sysvinit/redhat/cloud-config b/sysvinit/redhat/cloud-config
+index ad8ed83..f412644 100755
+--- a/sysvinit/redhat/cloud-config
++++ b/sysvinit/redhat/cloud-config
+@@ -1,5 +1,10 @@
+ #!/bin/sh
+-
++#
++# cloud-config The config cloud-init job
++#
++# chkconfig:   2345 52 50
++# description: Start cloud-init and runs the config phase and any associated \
++#              config modules as desired.
+ #
+ #    Copyright (C) 2012 Yahoo! Inc.
+ #
+diff --git a/sysvinit/redhat/cloud-final b/sysvinit/redhat/cloud-final
+index aeae890..c0f3bba 100755
+--- a/sysvinit/redhat/cloud-final
++++ b/sysvinit/redhat/cloud-final
+@@ -1,5 +1,10 @@
+ #!/bin/sh
+-
++#
++# cloud-final The final cloud-init job
++#
++# chkconfig:   2345 98 50
++# description: Start cloud-init and runs the final phase and any associated \
++#              final modules as desired.
+ #
+ #    Copyright (C) 2012 Yahoo! Inc.
+ #
+diff --git a/sysvinit/redhat/cloud-init b/sysvinit/redhat/cloud-init
+index c1c92ad..29789a6 100755
+--- a/sysvinit/redhat/cloud-init
++++ b/sysvinit/redhat/cloud-init
+@@ -1,5 +1,10 @@
+ #!/bin/sh
+-
++#
++# cloud-init The initial cloud-init job (net and fs contingent)
++#
++# chkconfig:   2345 51 50
++# description: Start cloud-init and runs the initialization phase and any \
++#              associated initial modules as desired.
+ #
+ #    Copyright (C) 2012 Yahoo! Inc.
+ #
+diff --git a/sysvinit/redhat/cloud-init-local b/sysvinit/redhat/cloud-init-local
+index b53e0db..831dd7f 100755
+--- a/sysvinit/redhat/cloud-init-local
++++ b/sysvinit/redhat/cloud-init-local
+@@ -1,5 +1,10 @@
+ #!/bin/sh
+-
++#
++# cloud-init-local The initial cloud-init job (local fs contingent)
++#
++# chkconfig:   2345 50 50
++# description: Start cloud-init and runs the initialization phases and any \
++#              associated initial modules as desired.
+ #
+ #    Copyright (C) 2012 Yahoo! Inc.
+ #
+-- 
+2.4.3
+

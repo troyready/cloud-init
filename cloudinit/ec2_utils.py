@@ -1,8 +1,10 @@
 # vi: ts=4 expandtab
 #
 #    Copyright (C) 2012 Yahoo! Inc.
+#    Copyright (C) 2014 Amazon.com, Inc. or its affiliates.
 #
 #    Author: Joshua Harlow <harlowja@yahoo-inc.com>
+#    Author: Andrew Jorgensen <ajorgens@amazon.com>
 #
 #    This program is free software: you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License version 3, as
@@ -89,6 +91,9 @@ class MetadataMaterializer(object):
             field_name = get_name(field)
             if not field or not field_name:
                 continue
+            # Don't materialize credentials
+            if field_name == 'security-credentials':
+                continue
             if has_children(field):
                 if field_name not in children:
                     children.append(field_name)
@@ -169,14 +174,11 @@ def get_instance_userdata(api_version='latest',
     return user_data
 
 
-def get_instance_metadata(api_version='latest',
-                          metadata_address='http://169.254.169.254',
-                          ssl_details=None, timeout=5, retries=5,
-                          leaf_decoder=None):
-    md_url = url_helper.combine_url(metadata_address, api_version)
-    # Note, 'meta-data' explicitly has trailing /.
-    # this is required for CloudStack (LP: #1356855)
-    md_url = url_helper.combine_url(md_url, 'meta-data/')
+def _get_instance_metadata(tree, api_version='latest',
+                           metadata_address='http://169.254.169.254',
+                           ssl_details=None, timeout=5, retries=5,
+                           leaf_decoder=None):
+    md_url = url_helper.combine_url(metadata_address, api_version, tree)
     caller = functools.partial(util.read_file_or_url,
                                ssl_details=ssl_details, timeout=timeout,
                                retries=retries)
@@ -191,5 +193,28 @@ def get_instance_metadata(api_version='latest',
             md = {}
         return md
     except Exception:
-        util.logexc(LOG, "Failed fetching metadata from url %s", md_url)
+        util.logexc(LOG, "Failed fetching %s from url %s", tree, md_url)
         return {}
+
+
+def get_instance_metadata(api_version='latest',
+                          metadata_address='http://169.254.169.254',
+                          ssl_details=None, timeout=5, retries=5,
+                          leaf_decoder=None):
+    # Note, 'meta-data' explicitly has trailing /.
+    # this is required for CloudStack (LP: #1356855)
+    return _get_instance_metadata(tree='meta-data/', api_version=api_version,
+                                  metadata_address=metadata_address,
+                                  ssl_details=ssl_details, timeout=timeout,
+                                  retries=retries, leaf_decoder=leaf_decoder)
+
+
+def get_instance_identity(api_version='latest',
+                          metadata_address='http://169.254.169.254',
+                          ssl_details=None, timeout=5, retries=5,
+                          leaf_decoder=None):
+    return _get_instance_metadata(tree='dynamic/instance-identity',
+                                  api_version=api_version,
+                                  metadata_address=metadata_address,
+                                  ssl_details=ssl_details, timeout=timeout,
+                                  retries=retries, leaf_decoder=leaf_decoder)

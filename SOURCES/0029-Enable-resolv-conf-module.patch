@@ -1,0 +1,65 @@
+From 11e0f4330988d2f4337687af39631f35a15211d4 Mon Sep 17 00:00:00 2001
+From: Andrew Jorgensen <ajorgens@amazon.com>
+Date: Thu, 20 Aug 2015 22:52:42 +0000
+Subject: [PATCH] Enable resolv-conf module
+
+Also fix a minor bug where an empty config entry causes a crash.
+
+Note that this is arguably incomplete since the module does not
+set PEERDNS=no, so it's possible for DHCP to overwrite your file.
+The module issues a warning about this.
+
+It may make more sense to have a distro-specific function for this
+and to take advantage of the ifup/down scripts support for overriding
+resolv.conf contents.
+
+Reviewed-by: Tom Kirchner <tjk@amazon.com>
+Reviewed-by: Ian Weller <iweller@amazon.com>
+---
+ cloudinit/config/cc_resolv_conf.py | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/cloudinit/config/cc_resolv_conf.py b/cloudinit/config/cc_resolv_conf.py
+index bbaa6c6..a33f961 100644
+--- a/cloudinit/config/cc_resolv_conf.py
++++ b/cloudinit/config/cc_resolv_conf.py
+@@ -2,9 +2,11 @@
+ #
+ #    Copyright (C) 2013 Craig Tracey
+ #    Copyright (C) 2013 Hewlett-Packard Development Company, L.P.
++#    Copyright (C) 2015 Amazon.com, Inc. or its affiliates.
+ #
+ #    Author: Craig Tracey <craigtracey@gmail.com>
+ #    Author: Juerg Haefliger <juerg.haefliger@hp.com>
++#    Author: Andrew Jorgensen <ajorgens@amazon.com>
+ #
+ #    This program is free software: you can redistribute it and/or modify
+ #    it under the terms of the GNU General Public License version 3, as
+@@ -58,7 +60,7 @@ LOG = logging.getLogger(__name__)
+ 
+ frequency = PER_INSTANCE
+ 
+-distros = ['fedora', 'rhel', 'sles']
++distros = ['redhat', 'sles']
+ 
+ 
+ def generate_resolv_conf(template_fn, params, target_fname="/etc/resolv.conf"):
+@@ -104,7 +106,7 @@ def handle(name, cfg, cloud, log, _args):
+                    " 'manage_resolv_conf' present but set to False"), name)
+         return
+ 
+-    if "resolv_conf" not in cfg:
++    if "resolv_conf" not in cfg or not cfg["resolv_conf"]:
+         log.warn("manage_resolv_conf True but no parameters provided!")
+ 
+     template_fn = cloud.get_template_filename('resolv.conf')
+@@ -113,4 +115,6 @@ def handle(name, cfg, cloud, log, _args):
+         return
+ 
+     generate_resolv_conf(template_fn=template_fn, params=cfg["resolv_conf"])
++    log.warn("You must set PEERDNS=no for any DHCP configured interfaces to "
++             "prevent resolv.conf being overwritten.")
+     return
+-- 
+2.4.3
+

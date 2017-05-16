@@ -2,9 +2,11 @@
 #
 #    Copyright (C) 2013 Craig Tracey
 #    Copyright (C) 2013 Hewlett-Packard Development Company, L.P.
+#    Copyright (C) 2015 Amazon.com, Inc. or its affiliates.
 #
 #    Author: Craig Tracey <craigtracey@gmail.com>
 #    Author: Juerg Haefliger <juerg.haefliger@hp.com>
+#    Author: Andrew Jorgensen <ajorgens@amazon.com>
 #
 #    This program is free software: you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License version 3, as
@@ -58,7 +60,7 @@ LOG = logging.getLogger(__name__)
 
 frequency = PER_INSTANCE
 
-distros = ['fedora', 'rhel', 'sles']
+distros = ['redhat', 'sles']
 
 
 def generate_resolv_conf(template_fn, params, target_fname="/etc/resolv.conf"):
@@ -104,7 +106,7 @@ def handle(name, cfg, cloud, log, _args):
                    " 'manage_resolv_conf' present but set to False"), name)
         return
 
-    if "resolv_conf" not in cfg:
+    if "resolv_conf" not in cfg or not cfg["resolv_conf"]:
         log.warn("manage_resolv_conf True but no parameters provided!")
 
     template_fn = cloud.get_template_filename('resolv.conf')
@@ -113,4 +115,6 @@ def handle(name, cfg, cloud, log, _args):
         return
 
     generate_resolv_conf(template_fn=template_fn, params=cfg["resolv_conf"])
+    log.warn("You must set PEERDNS=no for any DHCP configured interfaces to "
+             "prevent resolv.conf being overwritten.")
     return

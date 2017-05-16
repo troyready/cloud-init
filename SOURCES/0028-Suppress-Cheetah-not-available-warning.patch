@@ -1,0 +1,53 @@
+From 53ddc26c1ca6409750e832a871972be93c0b6a00 Mon Sep 17 00:00:00 2001
+From: Andrew Jorgensen <ajorgens@amazon.com>
+Date: Wed, 12 Aug 2015 22:11:08 +0000
+Subject: [PATCH] Suppress Cheetah not available warning
+
+Use Cheetah if it's present, fall back to "basic" if it's not; but change the
+warning to a debug message stating that Cheetah is in use if it is available,
+with no message at all by default.
+
+Reviewed-by: Sean Kelly <seankell@amazon.com>
+Reviewed-by: Ethan Faust <efaust@amazon.com>
+Reviewed-by: Rodrigo Novo <rodarvus@amazon.com>
+---
+ cloudinit/templater.py | 11 ++++++-----
+ 1 file changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/cloudinit/templater.py b/cloudinit/templater.py
+index 02f6261..d455591 100644
+--- a/cloudinit/templater.py
++++ b/cloudinit/templater.py
+@@ -3,10 +3,12 @@
+ #    Copyright (C) 2012 Canonical Ltd.
+ #    Copyright (C) 2012 Hewlett-Packard Development Company, L.P.
+ #    Copyright (C) 2012 Yahoo! Inc.
++#    Copyright (C) 2015 Amazon.com, Inc. or its affiliates.
+ #
+ #    Author: Scott Moser <scott.moser@canonical.com>
+ #    Author: Juerg Haefliger <juerg.haefliger@hp.com>
+ #    Author: Joshua Harlow <harlowja@yahoo-inc.com>
++#    Author: Andrew Jorgensen <ajorgens@amazon.com>
+ #
+ #    This program is free software: you can redistribute it and/or modify
+ #    it under the terms of the GNU General Public License version 3, as
+@@ -100,12 +102,11 @@ def detect_template(text):
+         rest = ''
+     type_match = TYPE_MATCHER.match(ident)
+     if not type_match:
+-        if not CHEETAH_AVAILABLE:
+-            LOG.warn("Cheetah not available as the default renderer for"
+-                     " unknown template, reverting to the basic renderer.")
+-            return ('basic', basic_render, text)
+-        else:
++        if CHEETAH_AVAILABLE:
++            LOG.debug("Using Cheetah as the renderer for unknown template.")
+             return ('cheetah', cheetah_render, text)
++        else:
++            return ('basic', basic_render, text)
+     else:
+         template_type = type_match.group(1).lower().strip()
+         if template_type not in ('jinja', 'cheetah', 'basic'):
+-- 
+2.1.0
+

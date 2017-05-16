@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python2.7
 # vi: ts=4 expandtab
 #
 #    Copyright (C) 2012 Canonical Ltd.

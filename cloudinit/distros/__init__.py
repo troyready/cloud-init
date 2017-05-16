@@ -3,11 +3,13 @@
 #    Copyright (C) 2012 Canonical Ltd.
 #    Copyright (C) 2012, 2013 Hewlett-Packard Development Company, L.P.
 #    Copyright (C) 2012 Yahoo! Inc.
+#    Copyright (C) 2014-2015 Amazon.com, Inc. or its affiliates.
 #
 #    Author: Scott Moser <scott.moser@canonical.com>
 #    Author: Juerg Haefliger <juerg.haefliger@hp.com>
 #    Author: Joshua Harlow <harlowja@yahoo-inc.com>
 #    Author: Ben Howard <ben.howard@canonical.com>
+#    Author: Andrew Jorgensen <ajorgens@amazon.com>
 #
 #    This program is free software: you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License version 3, as
@@ -38,7 +40,7 @@ from cloudinit.distros.parsers import hosts
 
 OSFAMILIES = {
     'debian': ['debian', 'ubuntu'],
-    'redhat': ['fedora', 'rhel'],
+    'redhat': ['fedora', 'rhel', 'amazon'],
     'gentoo': ['gentoo'],
     'freebsd': ['freebsd'],
     'suse': ['sles'],
@@ -47,6 +49,9 @@ OSFAMILIES = {
 
 LOG = logging.getLogger(__name__)
 
+# This is a best guess regex, based on current EC2 AZs, it could break when
+# Amazon adds new regions and new AZs.
+_EC2_AZ_RE = re.compile("^[a-z][a-z]-.*-[1-9][0-9]*[a-z]$")
 
 class Distro(object):
     __metaclass__ = abc.ABCMeta
@@ -55,15 +60,40 @@ class Distro(object):
     ci_sudoers_fn = "/etc/sudoers.d/90-cloud-init-users"
     hostname_conf_fn = "/etc/hostname"
     tz_zone_dir = "/usr/share/zoneinfo"
-    init_cmd = ['service']  # systemctl, service etc
+    init_cmd = "service"  # systemctl, service etc
 
     def __init__(self, name, cfg, paths):
         self._paths = paths
         self._cfg = cfg
         self.name = name
 
+    def service_running(self, service):
+        """Tries to determine if a service is running or not."""
+        try:
+            self.service_control(service, 'status')
+            return True
+        except util.ProcessExecutionError:
+            return False
+
+    def service_control(self, service, command, **kwargs):
+        """Start, stop, restart, reload, etc., a service."""
+        cmd = []
+        # At least one distro module has an empty init_cmd, opting to use
+        # init scripts directly instead.
+        if self.init_cmd:
+            cmd.append(self.init_cmd)
+        cmd.extend((service, command))
+        if 'systemctl' in cmd:  # Switch action ordering
+            cmd[1], cmd[2] = cmd[2], cmd[1]
+            cmd = filter(None, cmd)  # Remove empty arguments
+        return util.subp(cmd, **kwargs)
+
     @abc.abstractmethod
     def install_packages(self, pkglist):
+        raise NotImplementedError()
+
+    @abc.abstractmethod
+    def upgrade_packages(self, level=None, exclude=[]):
         raise NotImplementedError()
 
     @abc.abstractmethod
@@ -85,7 +115,7 @@ class Distro(object):
     def set_hostname(self, hostname, fqdn=None):
         writeable_hostname = self._select_hostname(hostname, fqdn)
         self._write_hostname(writeable_hostname, self.hostname_conf_fn)
-        self._apply_hostname(hostname)
+        self._apply_hostname(writeable_hostname)
 
     @abc.abstractmethod
     def package_command(self, cmd, args=None, pkgs=None):
@@ -96,7 +126,7 @@ class Distro(object):
         raise NotImplementedError()
 
     def get_primary_arch(self):
-        arch = os.uname[4]
+        arch = os.uname()[4]
         if arch in ("i386", "i486", "i586", "i686"):
             return "i386"
         return arch
@@ -107,13 +137,15 @@ class Distro(object):
             arch = self.get_primary_arch()
         return _get_arch_package_mirror_info(mirror_info, arch)
 
-    def get_package_mirror_info(self, arch=None,
-                                availability_zone=None):
+    def get_package_mirror_info(self, arch=None, region=None,
+                                availability_zone=None,
+                                services_domain=None):
         # This resolves the package_mirrors config option
         # down to a single dict of {mirror_name: mirror_url}
         arch_info = self._get_arch_package_mirror_info(arch)
-        return _get_package_mirror_info(availability_zone=availability_zone,
-                                        mirror_info=arch_info)
+        return _get_package_mirror_info(services_domain=services_domain,
+                                        availability_zone=availability_zone,
+                                        region=region, mirror_info=arch_info)
 
     def apply_network(self, settings, bring_up=True):
         # Write it out
@@ -159,9 +191,12 @@ class Distro(object):
             util.logexc(LOG, "Failed to non-persistently adjust the system "
                         "hostname to %s", hostname)
 
-    @abc.abstractmethod
     def _select_hostname(self, hostname, fqdn):
-        raise NotImplementedError()
+        # Prefer the short hostname over the long
+        # fully qualified domain name
+        if not hostname:
+            return fqdn
+        return hostname
 
     @staticmethod
     def expand_osfamily(family_list):
@@ -397,10 +432,7 @@ class Distro(object):
         Lock the password of a user, i.e., disable password logins
         """
         try:
-            # Need to use the short option name '-l' instead of '--lock'
-            # (which would be more descriptive) since SLES 11 doesn't know
-            # about long names.
-            util.subp(['passwd', '-l', name])
+            util.subp(['usermod', '-L', name])
         except Exception as e:
             util.logexc(LOG, 'Failed to disable password for user %s', name)
             raise e
@@ -526,23 +558,27 @@ class Distro(object):
                 LOG.info("Added user '%s' to group '%s'" % (member, name))
 
 
-def _get_package_mirror_info(mirror_info, availability_zone=None,
-                             mirror_filter=util.search_for_mirror):
+def _get_package_mirror_info(mirror_info, availability_zone=None, region=None,
+                             mirror_filter=util.search_for_mirror,
+                             services_domain=None):
     # given a arch specific 'mirror_info' entry (from package_mirrors)
     # search through the 'search' entries, and fallback appropriately
     # return a dict with only {name: mirror} entries.
     if not mirror_info:
         mirror_info = {}
 
-    ec2_az_re = ("^[a-z][a-z]-(%s)-[1-9][0-9]*[a-z]$" %
-        "north|northeast|east|southeast|south|southwest|west|northwest")
-
     subst = {}
     if availability_zone:
         subst['availability_zone'] = availability_zone
+        if not region and _EC2_AZ_RE.match(availability_zone):
+            region = availability_zone[:-1]
 
-    if availability_zone and re.match(ec2_az_re, availability_zone):
-        subst['ec2_region'] = "%s" % availability_zone[0:-1]
+    if region:
+        subst['region'] = region
+        subst['ec2_region'] = region
+
+    if services_domain:
+        subst['services_domain'] = services_domain
 
     results = {}
     for (name, mirror) in mirror_info.get('failsafe', {}).iteritems():

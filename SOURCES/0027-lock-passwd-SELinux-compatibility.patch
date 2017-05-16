@@ -1,0 +1,44 @@
+From 7f0ced6aa2729174507548944d3e87e12702b706 Mon Sep 17 00:00:00 2001
+From: Andrew Jorgensen <ajorgens@amazon.com>
+Date: Wed, 12 Aug 2015 16:01:33 +0000
+Subject: [PATCH] lock-passwd SELinux compatibility
+
+The passwd utility doesn't correctly maintain the context of /etc/shadow, but
+the usermod utility does. This is an incomplete fix for the issue as there are
+other uses of passwd, but this is the one that is in use by default.
+
+Reviewed-by: Tom Kirchner <tjk@amazon.com>
+Reviewed-by: Jason Green <jasg@amazon.com>
+Reviewed-by: Rodrigo Novo <rodarvus@amazon.com>
+---
+ cloudinit/distros/__init__.py | 7 ++-----
+ 1 file changed, 2 insertions(+), 5 deletions(-)
+
+diff --git a/cloudinit/distros/__init__.py b/cloudinit/distros/__init__.py
+index a00dd30..31f32e7 100644
+--- a/cloudinit/distros/__init__.py
++++ b/cloudinit/distros/__init__.py
+@@ -3,7 +3,7 @@
+ #    Copyright (C) 2012 Canonical Ltd.
+ #    Copyright (C) 2012, 2013 Hewlett-Packard Development Company, L.P.
+ #    Copyright (C) 2012 Yahoo! Inc.
+-#    Copyright (C) 2014 Amazon.com, Inc. or its affiliates.
++#    Copyright (C) 2014-2015 Amazon.com, Inc. or its affiliates.
+ #
+ #    Author: Scott Moser <scott.moser@canonical.com>
+ #    Author: Juerg Haefliger <juerg.haefliger@hp.com>
+@@ -429,10 +429,7 @@ class Distro(object):
+         Lock the password of a user, i.e., disable password logins
+         """
+         try:
+-            # Need to use the short option name '-l' instead of '--lock'
+-            # (which would be more descriptive) since SLES 11 doesn't know
+-            # about long names.
+-            util.subp(['passwd', '-l', name])
++            util.subp(['usermod', '-L', name])
+         except Exception as e:
+             util.logexc(LOG, 'Failed to disable password for user %s', name)
+             raise e
+-- 
+2.1.0
+

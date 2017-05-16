@@ -1,0 +1,217 @@
+From 9d6e60934606db7a63250190f7fca223a9be500b Mon Sep 17 00:00:00 2001
+From: Andrew Jorgensen <ajorgens@amazon.com>
+Date: Mon, 9 Sep 2013 17:23:10 -0700
+Subject: [PATCH] Use instance-identity doc for region and instance-id
+
+Reviewed-by: Ethan Faust <efaust@amazon.com>
+Reviewed-by: Cyle Riggs <cyler@amazon.com>
+Reviewed-by: Tom Kirchner <tjk@amazon.com>
+Reviewed-by: Matt Nierzwicki <nierzwic@amazon.com>
+---
+ cloudinit/distros/__init__.py      | 19 ++++++++++--------
+ cloudinit/ec2_utils.py             | 40 +++++++++++++++++++++++++++++---------
+ cloudinit/sources/DataSourceEc2.py | 25 ++++++++++++++++++++++--
+ cloudinit/sources/__init__.py      |  5 +++++
+ 4 files changed, 70 insertions(+), 19 deletions(-)
+
+diff --git a/cloudinit/distros/__init__.py b/cloudinit/distros/__init__.py
+index bc8e9ec..2724ca5 100644
+--- a/cloudinit/distros/__init__.py
++++ b/cloudinit/distros/__init__.py
+@@ -49,6 +49,9 @@ OSFAMILIES = {
+ 
+ LOG = logging.getLogger(__name__)
+ 
++# This is a best guess regex, based on current EC2 AZs, it could break when
++# Amazon adds new regions and new AZs.
++_EC2_AZ_RE = re.compile("^[a-z][a-z]-.*-[1-9][0-9]*[a-z]$")
+ 
+ class Distro(object):
+     __metaclass__ = abc.ABCMeta
+@@ -113,13 +116,13 @@ class Distro(object):
+             arch = self.get_primary_arch()
+         return _get_arch_package_mirror_info(mirror_info, arch)
+ 
+-    def get_package_mirror_info(self, arch=None,
++    def get_package_mirror_info(self, arch=None, region=None,
+                                 availability_zone=None):
+         # This resolves the package_mirrors config option
+         # down to a single dict of {mirror_name: mirror_url}
+         arch_info = self._get_arch_package_mirror_info(arch)
+         return _get_package_mirror_info(availability_zone=availability_zone,
+-                                        mirror_info=arch_info)
++                                        region=region, mirror_info=arch_info)
+ 
+     def apply_network(self, settings, bring_up=True):
+         # Write it out
+@@ -532,7 +535,7 @@ class Distro(object):
+                 LOG.info("Added user '%s' to group '%s'" % (member, name))
+ 
+ 
+-def _get_package_mirror_info(mirror_info, availability_zone=None,
++def _get_package_mirror_info(mirror_info, availability_zone=None, region=None,
+                              mirror_filter=util.search_for_mirror):
+     # given a arch specific 'mirror_info' entry (from package_mirrors)
+     # search through the 'search' entries, and fallback appropriately
+@@ -540,15 +543,15 @@ def _get_package_mirror_info(mirror_info, availability_zone=None,
+     if not mirror_info:
+         mirror_info = {}
+ 
+-    ec2_az_re = ("^[a-z][a-z]-(%s)-[1-9][0-9]*[a-z]$" %
+-        "north|northeast|east|southeast|south|southwest|west|northwest")
+-
+     subst = {}
+     if availability_zone:
+         subst['availability_zone'] = availability_zone
++        if not region and _EC2_AZ_RE.match(availability_zone):
++            region = availability_zone[:-1]
+ 
+-    if availability_zone and re.match(ec2_az_re, availability_zone):
+-        subst['ec2_region'] = "%s" % availability_zone[0:-1]
++    if region:
++        subst['region'] = region
++        subst['ec2_region'] = region
+ 
+     results = {}
+     for (name, mirror) in mirror_info.get('failsafe', {}).iteritems():
+diff --git a/cloudinit/ec2_utils.py b/cloudinit/ec2_utils.py
+index e69d06f..96299ac 100644
+--- a/cloudinit/ec2_utils.py
++++ b/cloudinit/ec2_utils.py
+@@ -1,8 +1,10 @@
+ # vi: ts=4 expandtab
+ #
+ #    Copyright (C) 2012 Yahoo! Inc.
++#    Copyright (C) 2014 Amazon.com, Inc. or its affiliates.
+ #
+ #    Author: Joshua Harlow <harlowja@yahoo-inc.com>
++#    Author: Andrew Jorgensen <ajorgens@amazon.com>
+ #
+ #    This program is free software: you can redistribute it and/or modify
+ #    it under the terms of the GNU General Public License version 3, as
+@@ -169,14 +171,11 @@ def get_instance_userdata(api_version='latest',
+     return user_data
+ 
+ 
+-def get_instance_metadata(api_version='latest',
+-                          metadata_address='http://169.254.169.254',
+-                          ssl_details=None, timeout=5, retries=5,
+-                          leaf_decoder=None):
+-    md_url = url_helper.combine_url(metadata_address, api_version)
+-    # Note, 'meta-data' explicitly has trailing /.
+-    # this is required for CloudStack (LP: #1356855)
+-    md_url = url_helper.combine_url(md_url, 'meta-data/')
++def _get_instance_metadata(tree, api_version='latest',
++                           metadata_address='http://169.254.169.254',
++                           ssl_details=None, timeout=5, retries=5,
++                           leaf_decoder=None):
++    md_url = url_helper.combine_url(metadata_address, api_version, tree)
+     caller = functools.partial(util.read_file_or_url,
+                                ssl_details=ssl_details, timeout=timeout,
+                                retries=retries)
+@@ -191,5 +190,28 @@ def get_instance_metadata(api_version='latest',
+             md = {}
+         return md
+     except Exception:
+-        util.logexc(LOG, "Failed fetching metadata from url %s", md_url)
++        util.logexc(LOG, "Failed fetching %s from url %s", tree, md_url)
+         return {}
++
++
++def get_instance_metadata(api_version='latest',
++                          metadata_address='http://169.254.169.254',
++                          ssl_details=None, timeout=5, retries=5,
++                          leaf_decoder=None):
++    # Note, 'meta-data' explicitly has trailing /.
++    # this is required for CloudStack (LP: #1356855)
++    return _get_instance_metadata(tree='meta-data/', api_version=api_version,
++                                  metadata_address=metadata_address,
++                                  ssl_details=ssl_details, timeout=timeout,
++                                  retries=retries, leaf_decoder=leaf_decoder)
++
++
++def get_instance_identity(api_version='latest',
++                          metadata_address='http://169.254.169.254',
++                          ssl_details=None, timeout=5, retries=5,
++                          leaf_decoder=None):
++    return _get_instance_metadata(tree='dynamic/instance-identity',
++                                  api_version=api_version,
++                                  metadata_address=metadata_address,
++                                  ssl_details=ssl_details, timeout=timeout,
++                                  retries=retries, leaf_decoder=leaf_decoder)
+diff --git a/cloudinit/sources/DataSourceEc2.py b/cloudinit/sources/DataSourceEc2.py
+index 1b20ecf..0071e75 100644
+--- a/cloudinit/sources/DataSourceEc2.py
++++ b/cloudinit/sources/DataSourceEc2.py
+@@ -65,6 +65,8 @@ class DataSourceEc2(sources.DataSource):
+                 self.metadata_address)
+             self.metadata = ec2.get_instance_metadata(self.api_ver,
+                                                       self.metadata_address)
++            self.identity = ec2.get_instance_identity(
++                self.api_ver, self.metadata_address)['document']
+             LOG.debug("Crawl of metadata service took %s seconds",
+                        int(time.time() - start_time))
+             return True
+@@ -80,7 +82,11 @@ class DataSourceEc2(sources.DataSource):
+         return self.metadata.get('ami-launch-index')
+ 
+     def get_instance_id(self):
+-        return self.metadata['instance-id']
++        """Prefer the ID from the instance identity document, but fall back."""
++        instance_id = self.identity.get('instanceId')
++        if not instance_id:
++            instance_id = self.metadata.get('instance-id')
++        return instance_id
+ 
+     def _get_url_settings(self):
+         mcfg = self.ds_cfg
+@@ -193,7 +199,22 @@ class DataSourceEc2(sources.DataSource):
+     @property
+     def availability_zone(self):
+         try:
+-            return self.metadata['placement']['availability-zone']
++            az = self.identity.get('availabilityZone')
++            if not az:
++                az = self.metadata['placement']['availability-zone']
++            return az
++        except KeyError:
++            return None
++
++    @property
++    def region(self):
++        try:
++            region = self.identity.get('region')
++            # There is no guarantee that the availability zone will be
++            # region + letter, but it is still a good fallback.
++            if not region:
++                region = self.availability_zone()[:-1]
++            return region
+         except KeyError:
+             return None
+ 
+diff --git a/cloudinit/sources/__init__.py b/cloudinit/sources/__init__.py
+index 7c7ef9a..59da702 100644
+--- a/cloudinit/sources/__init__.py
++++ b/cloudinit/sources/__init__.py
+@@ -155,6 +155,10 @@ class DataSource(object):
+         return self.metadata.get('availability-zone',
+                                  self.metadata.get('availability_zone'))
+ 
++    @property
++    def region(self):
++        return self.metadata.get('region')
++
+     def get_instance_id(self):
+         if not self.metadata or 'instance-id' not in self.metadata:
+             # Return a magic not really instance id string
+@@ -209,6 +213,7 @@ class DataSource(object):
+ 
+     def get_package_mirror_info(self):
+         return self.distro.get_package_mirror_info(
++            region=self.region,
+             availability_zone=self.availability_zone)
+ 
+ 
+-- 
+2.1.0
+

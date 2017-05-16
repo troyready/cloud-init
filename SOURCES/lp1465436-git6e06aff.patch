@@ -1,0 +1,29 @@
+commit 6e06afffed8614cb143e3a13bab5aa382ccbbce9
+Author: Scott Moser <smoser@ubuntu.com>
+Date:   Tue Jun 16 11:18:33 2015 -0400
+
+    growpart: fix specification of 'devices' list.
+    
+    given config:
+     {'growpart': {'devices': ["/"]}}
+    
+    the 'devices' was ignored, it was incorrectly read from the top
+    level non-namespaced location.
+    
+    LP: #1465436
+
+    [iweller@amazon.com: removed ChangeLog addition]
+
+diff --git a/cloudinit/config/cc_growpart.py b/cloudinit/config/cc_growpart.py
+index f52c41f..859d69f 100644
+--- a/cloudinit/config/cc_growpart.py
++++ b/cloudinit/config/cc_growpart.py
+@@ -276,7 +276,7 @@ def handle(_name, cfg, _cloud, log, _args):
+             log.debug("use ignore_growroot_disabled to ignore")
+             return
+ 
+-    devices = util.get_cfg_option_list(cfg, "devices", ["/"])
++    devices = util.get_cfg_option_list(mycfg, "devices", ["/"])
+     if not len(devices):
+         log.debug("growpart: empty device list")
+         return

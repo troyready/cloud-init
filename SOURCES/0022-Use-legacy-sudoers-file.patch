@@ -1,0 +1,26 @@
+From 21d6d5d7bca0086e7ce61366da7ef14cf3dad1d4 Mon Sep 17 00:00:00 2001
+From: Andrew Jorgensen <ajorgens@amazon.com>
+Date: Wed, 2 Apr 2014 13:36:28 -0700
+Subject: [PATCH] Use legacy sudoers file
+
+Reviewed-by: Cyle Riggs <cyler@amazon.com>
+Reviewed-by: Ben Cressey <bcressey@amazon.com>
+---
+ cloudinit/distros/amazon.py | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/cloudinit/distros/amazon.py b/cloudinit/distros/amazon.py
+index b731ff8..3081c85 100644
+--- a/cloudinit/distros/amazon.py
++++ b/cloudinit/distros/amazon.py
+@@ -41,6 +41,7 @@ UPGRADE_BUGFIX    = 5
+ UPGRADE_SECURITY  = UPGRADE_IMPORTANT
+ 
+ class Distro(rhel.Distro):
++    ci_sudoers_fn = "/etc/sudoers.d/cloud-init"
+ 
+     def upgrade_packages(self, level='none', exclude=[]):
+         LOG.debug('Upgrade level: %s', level)
+-- 
+2.1.0
+

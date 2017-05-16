@@ -155,6 +155,14 @@ class DataSource(object):
         return self.metadata.get('availability-zone',
                                  self.metadata.get('availability_zone'))
 
+    @property
+    def region(self):
+        return self.metadata.get('region')
+
+    @property
+    def services_domain(self):
+        return None
+
     def get_instance_id(self):
         if not self.metadata or 'instance-id' not in self.metadata:
             # Return a magic not really instance id string
@@ -209,7 +217,9 @@ class DataSource(object):
 
     def get_package_mirror_info(self):
         return self.distro.get_package_mirror_info(
-            availability_zone=self.availability_zone)
+            region=self.region,
+            availability_zone=self.availability_zone,
+            services_domain=self.services_domain)
 
 
 def normalize_pubkey_data(pubkey_data):

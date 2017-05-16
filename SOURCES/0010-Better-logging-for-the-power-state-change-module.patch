@@ -1,0 +1,81 @@
+From 28b20f2e6f6e47e03c808572e72238bc555e3f0f Mon Sep 17 00:00:00 2001
+From: Andrew Jorgensen <ajorgens@amazon.com>
+Date: Mon, 9 Sep 2013 09:46:41 -0700
+Subject: [PATCH] Better logging for the power-state-change module
+
+[ajorgens@amazon.com: rebase onto 0.7.6, logging patches only]
+Reviewed-by: Ethan Faust <efaust@amazon.com>
+Reviewed-by: Matt Nierzwicki <nierzwic@amazon.com>
+---
+ cloudinit/config/cc_power_state_change.py | 20 +++++++++++++-------
+ 1 file changed, 13 insertions(+), 7 deletions(-)
+
+diff --git a/cloudinit/config/cc_power_state_change.py b/cloudinit/config/cc_power_state_change.py
+index 09d3737..652def5 100644
+--- a/cloudinit/config/cc_power_state_change.py
++++ b/cloudinit/config/cc_power_state_change.py
+@@ -1,8 +1,10 @@
+ # vi: ts=4 expandtab
+ #
+ #    Copyright (C) 2011 Canonical Ltd.
++#    Copyright (C) 2014 Amazon.com, Inc. or its affiliates.
+ #
+ #    Author: Scott Moser <scott.moser@canonical.com>
++#    Author: Andrew Jorgensen <ajorgens@amazon.com>
+ #
+ #    This program is free software: you can redistribute it and/or modify
+ #    it under the terms of the GNU General Public License version 3, as
+@@ -51,12 +53,12 @@ def givecmdline(pid):
+ def handle(_name, cfg, _cloud, log, _args):
+ 
+     try:
+-        (args, timeout) = load_power_state(cfg)
++        (args, timeout) = load_power_state(cfg, log)
+         if args is None:
+             log.debug("no power_state provided. doing nothing")
+             return
+-    except Exception as e:
+-        log.warn("%s Not performing power state change!" % str(e))
++    except Exception:
++        log.warning("Not performing power state change!", exc_info=True)
+         return
+ 
+     mypid = os.getpid()
+@@ -74,7 +76,7 @@ def handle(_name, cfg, _cloud, log, _args):
+                  [args, devnull_fp])
+ 
+ 
+-def load_power_state(cfg):
++def load_power_state(cfg, log):
+     # returns a tuple of shutdown_command, timeout
+     # shutdown_command is None if no config found
+     pstate = cfg.get('power_state')
+@@ -87,7 +89,8 @@ def load_power_state(cfg):
+ 
+     opt_map = {'halt': '-H', 'poweroff': '-P', 'reboot': '-r'}
+ 
+-    mode = pstate.get("mode")
++    mode = util.get_cfg_option_str(pstate, 'mode')
++    log.debug('mode: %s', mode)
+     if mode not in opt_map:
+         raise TypeError(
+             "power_state[mode] required, must be one of: %s. found: '%s'." %
+@@ -104,10 +107,13 @@ def load_power_state(cfg):
+         raise TypeError(
+             "power_state[delay] must be 'now' or '+m' (minutes)."
+             " found '%s'." % delay)
++    log.debug('delay: %s', delay)
+ 
+     args = ["shutdown", opt_map[mode], delay]
+-    if pstate.get("message"):
+-        args.append(pstate.get("message"))
++    message = util.get_cfg_option_str(pstate, 'message')
++    if message:
++        args.append(message)
++    log.debug('message: %s', message)
+ 
+     try:
+         timeout = float(pstate.get('timeout', 30.0))
+-- 
+2.1.0
+

@@ -1,0 +1,255 @@
+From 36bc4683c271884a943c7f345b01498e53148307 Mon Sep 17 00:00:00 2001
+From: Andrew Jorgensen <ajorgens@amazon.com>
+Date: Thu, 12 Sep 2013 09:33:25 -0700
+Subject: [PATCH] Improve 'service' handling
+
+Reviewed-by: Ethan Faust <efaust@amazon.com>
+Reviewed-by: Cristian Gafton <gafton@amazon.com>
+Reviewed-by: Matt Nierzwicki <nierzwic@amazon.com>
+[ajorgens@amazon.com: Fix service control arguments accumulating]
+Reviewed-by: Jason Green <jasg@amazon.com>
+Reviewed-by: Sean Kelly <seankell@amazon.com>
+Reviewed-by: Rodrigo Novo <rodarvus@amazon.com>
+---
+ cloudinit/config/cc_landscape.py     |  4 +++-
+ cloudinit/config/cc_mcollective.py   |  4 +++-
+ cloudinit/config/cc_puppet.py        |  6 ++++--
+ cloudinit/config/cc_rsyslog.py       |  7 +++++--
+ cloudinit/config/cc_salt_minion.py   | 12 +++++++++---
+ cloudinit/config/cc_set_passwords.py | 14 ++++++--------
+ cloudinit/distros/__init__.py        | 23 ++++++++++++++++++++++-
+ cloudinit/distros/arch.py            |  2 +-
+ cloudinit/distros/gentoo.py          |  2 +-
+ 9 files changed, 54 insertions(+), 20 deletions(-)
+
+diff --git a/cloudinit/config/cc_landscape.py b/cloudinit/config/cc_landscape.py
+index 8a70967..bd4d375 100644
+--- a/cloudinit/config/cc_landscape.py
++++ b/cloudinit/config/cc_landscape.py
+@@ -2,9 +2,11 @@
+ #
+ #    Copyright (C) 2011 Canonical Ltd.
+ #    Copyright (C) 2012 Hewlett-Packard Development Company, L.P.
++#    Copyright (C) 2014 Amazon.com, Inc. or its affiliates.
+ #
+ #    Author: Scott Moser <scott.moser@canonical.com>
+ #    Author: Juerg Haefliger <juerg.haefliger@hp.com>
++#    Author: Andrew Jorgensen <ajorgens@amazon.com>
+ #
+ #    This program is free software: you can redistribute it and/or modify
+ #    it under the terms of the GNU General Public License version 3, as
+@@ -80,7 +82,7 @@ def handle(_name, cfg, cloud, log, _args):
+     log.debug("Wrote landscape config file to %s", LSC_CLIENT_CFG_FILE)
+ 
+     util.write_file(LS_DEFAULT_FILE, "RUN=1\n")
+-    util.subp(["service", "landscape-client", "restart"])
++    cloud.distro.service_control("landscape-client", "restart")
+ 
+ 
+ def merge_together(objs):
+diff --git a/cloudinit/config/cc_mcollective.py b/cloudinit/config/cc_mcollective.py
+index b670390..7d6f013 100644
+--- a/cloudinit/config/cc_mcollective.py
++++ b/cloudinit/config/cc_mcollective.py
+@@ -2,10 +2,12 @@
+ #
+ #    Copyright (C) 2009-2011 Canonical Ltd.
+ #    Copyright (C) 2012 Hewlett-Packard Development Company, L.P.
++#    Copyright (C) 2014 Amazon.com, Inc. or its affiliates.
+ #
+ #    Author: Marc Cluet <marc.cluet@canonical.com>
+ #    Based on code by Scott Moser <scott.moser@canonical.com>
+ #    Author: Juerg Haefliger <juerg.haefliger@hp.com>
++#    Author: Andrew Jorgensen <ajorgens@amazon.com>
+ #
+ #    This program is free software: you can redistribute it and/or modify
+ #    it under the terms of the GNU General Public License version 3, as
+@@ -84,4 +86,4 @@ def handle(name, cfg, cloud, log, _args):
+         util.write_file(SERVER_CFG, contents, mode=0644)
+ 
+     # Start mcollective
+-    util.subp(['service', 'mcollective', 'start'], capture=False)
++    cloud.distro.service_control('mcollective', 'start', capture=False)
+diff --git a/cloudinit/config/cc_puppet.py b/cloudinit/config/cc_puppet.py
+index 471a1a8..cad360a 100644
+--- a/cloudinit/config/cc_puppet.py
++++ b/cloudinit/config/cc_puppet.py
+@@ -2,9 +2,11 @@
+ #
+ #    Copyright (C) 2009-2010 Canonical Ltd.
+ #    Copyright (C) 2012 Hewlett-Packard Development Company, L.P.
++#    Copyright (C) 2014 Amazon.com, Inc. or its affiliates.
+ #
+ #    Author: Scott Moser <scott.moser@canonical.com>
+ #    Author: Juerg Haefliger <juerg.haefliger@hp.com>
++#    Author: Andrew Jorgensen <ajorgens@amazon.com>
+ #
+ #    This program is free software: you can redistribute it and/or modify
+ #    it under the terms of the GNU General Public License version 3, as
+@@ -114,5 +116,5 @@ def handle(name, cfg, cloud, log, _args):
+     # Set it up so it autostarts
+     _autostart_puppet(log)
+ 
+-    # Start puppetd
+-    util.subp(['service', 'puppet', 'start'], capture=False)
++    # Start puppetd (puppetagent?)
++    cloud.distro.service_control('puppet', 'start', capture=False)
+diff --git a/cloudinit/config/cc_rsyslog.py b/cloudinit/config/cc_rsyslog.py
+index 57486ed..e5aa662 100644
+--- a/cloudinit/config/cc_rsyslog.py
++++ b/cloudinit/config/cc_rsyslog.py
+@@ -2,9 +2,11 @@
+ #
+ #    Copyright (C) 2009-2010 Canonical Ltd.
+ #    Copyright (C) 2012 Hewlett-Packard Development Company, L.P.
++#    Copyright (C) 2014 Amazon.com, Inc. or its affiliates.
+ #
+ #    Author: Scott Moser <scott.moser@canonical.com>
+ #    Author: Juerg Haefliger <juerg.haefliger@hp.com>
++#    Author: Andrew Jorgensen <ajorgens@amazon.com>
+ #
+ #    This program is free software: you can redistribute it and/or modify
+ #    it under the terms of the GNU General Public License version 3, as
+@@ -87,8 +89,9 @@ def handle(name, cfg, cloud, log, _args):
+         # it will also return failure on the attempt, so 'restarted'
+         # won't get set.
+         log.debug("Restarting rsyslog")
+-        util.subp(['service', 'rsyslog', 'restart'])
+-        restarted = True
++        if cloud.distro.service_running('rsyslog'):
++            cloud.distro.service_control('rsyslog', 'restart')
++            restarted = True
+     except Exception:
+         util.logexc(log, "Failed restarting rsyslog")
+ 
+diff --git a/cloudinit/config/cc_salt_minion.py b/cloudinit/config/cc_salt_minion.py
+index 53013dc..fbd10bc 100644
+--- a/cloudinit/config/cc_salt_minion.py
++++ b/cloudinit/config/cc_salt_minion.py
+@@ -1,6 +1,9 @@
+ # vi: ts=4 expandtab
+ #
++#    Copyright (C) 2014 Amazon.com, Inc. or its affiliates.
++#
+ #    Author: Jeff Bauer <jbauer@rubic.com>
++#    Author: Andrew Jorgensen <ajorgens@amazon.com>
+ #
+ #    This program is free software: you can redistribute it and/or modify
+ #    it under the terms of the GNU General Public License version 3, as
+@@ -54,6 +57,9 @@ def handle(name, cfg, cloud, log, _args):
+             util.write_file(pub_name, salt_cfg['public_key'])
+             util.write_file(pem_name, salt_cfg['private_key'])
+ 
+-    # restart salt-minion.  'service' will start even if not started.  if it
+-    # was started, it needs to be restarted for config change.
+-    util.subp(['service', 'salt-minion', 'restart'], capture=False)
++    # start / restart salt-minion. if it was started, it needs to be restarted
++    # for config change.
++    if cloud.distro.service_running('salt-minion'):
++        cloud.distro.service_control('salt-minion', 'restart', capture=False)
++    else:
++        cloud.distro.service_control('salt-minion', 'start', capture=False)
+diff --git a/cloudinit/config/cc_set_passwords.py b/cloudinit/config/cc_set_passwords.py
+index 4ca85e2..0e22419 100644
+--- a/cloudinit/config/cc_set_passwords.py
++++ b/cloudinit/config/cc_set_passwords.py
+@@ -2,9 +2,11 @@
+ #
+ #    Copyright (C) 2009-2010 Canonical Ltd.
+ #    Copyright (C) 2012, 2013 Hewlett-Packard Development Company, L.P.
++#    Copyright (C) 2014 Amazon.com, Inc. or its affiliates.
+ #
+ #    Author: Scott Moser <scott.moser@canonical.com>
+ #    Author: Juerg Haefliger <juerg.haefliger@hp.com>
++#    Author: Andrew Jorgensen <ajorgens@amazon.com>
+ #
+ #    This program is free software: you can redistribute it and/or modify
+ #    it under the terms of the GNU General Public License version 3, as
+@@ -136,14 +138,10 @@ def handle(_name, cfg, cloud, log, args):
+         util.write_file(ssh_util.DEF_SSHD_CFG, "\n".join(lines))
+ 
+         try:
+-            cmd = cloud.distro.init_cmd  # Default service
+-            cmd.append(cloud.distro.get_option('ssh_svcname', 'ssh'))
+-            cmd.append('restart')
+-            if 'systemctl' in cmd:  # Switch action ordering
+-                cmd[1], cmd[2] = cmd[2], cmd[1]
+-            cmd = filter(None, cmd)  # Remove empty arguments
+-            util.subp(cmd)
+-            log.debug("Restarted the ssh daemon")
++            service = cloud.distro.get_option('ssh_svcname', 'ssh')
++            if cloud.distro.service_running(service):
++                cloud.distro.service_control(service, 'restart')
++                log.debug("Restarted the ssh daemon")
+         except:
+             util.logexc(log, "Restarting of the ssh daemon failed")
+ 
+diff --git a/cloudinit/distros/__init__.py b/cloudinit/distros/__init__.py
+index 2724ca5..26492e6 100644
+--- a/cloudinit/distros/__init__.py
++++ b/cloudinit/distros/__init__.py
+@@ -60,13 +60,34 @@ class Distro(object):
+     ci_sudoers_fn = "/etc/sudoers.d/90-cloud-init-users"
+     hostname_conf_fn = "/etc/hostname"
+     tz_zone_dir = "/usr/share/zoneinfo"
+-    init_cmd = ['service']  # systemctl, service etc
++    init_cmd = "service"  # systemctl, service etc
+ 
+     def __init__(self, name, cfg, paths):
+         self._paths = paths
+         self._cfg = cfg
+         self.name = name
+ 
++    def service_running(self, service):
++        """Tries to determine if a service is running or not."""
++        try:
++            self.service_control(service, 'status')
++            return True
++        except util.ProcessExecutionError:
++            return False
++
++    def service_control(self, service, command, **kwargs):
++        """Start, stop, restart, reload, etc., a service."""
++        cmd = []
++        # At least one distro module has an empty init_cmd, opting to use
++        # init scripts directly instead.
++        if self.init_cmd:
++            cmd.append(self.init_cmd)
++        cmd.extend((service, command))
++        if 'systemctl' in cmd:  # Switch action ordering
++            cmd[1], cmd[2] = cmd[2], cmd[1]
++            cmd = filter(None, cmd)  # Remove empty arguments
++        return util.subp(cmd, **kwargs)
++
+     @abc.abstractmethod
+     def install_packages(self, pkglist):
+         raise NotImplementedError()
+diff --git a/cloudinit/distros/arch.py b/cloudinit/distros/arch.py
+index 005a0dd..e8cf6bb 100644
+--- a/cloudinit/distros/arch.py
++++ b/cloudinit/distros/arch.py
+@@ -33,7 +33,7 @@ class Distro(distros.Distro):
+     locale_conf_fn = "/etc/locale.gen"
+     network_conf_dir = "/etc/netctl"
+     resolve_conf_fn = "/etc/resolv.conf"
+-    init_cmd = ['systemctl']  # init scripts
++    init_cmd = "systemctl"  # init scripts
+ 
+     def __init__(self, name, cfg, paths):
+         distros.Distro.__init__(self, name, cfg, paths)
+diff --git a/cloudinit/distros/gentoo.py b/cloudinit/distros/gentoo.py
+index 45c2e65..3c59a2d 100644
+--- a/cloudinit/distros/gentoo.py
++++ b/cloudinit/distros/gentoo.py
+@@ -31,7 +31,7 @@ LOG = logging.getLogger(__name__)
+ class Distro(distros.Distro):
+     locale_conf_fn = "/etc/locale.gen"
+     network_conf_fn = "/etc/conf.d/net"
+-    init_cmd = ['']  # init scripts
++    init_cmd = None  # init scripts
+ 
+     def __init__(self, name, cfg, paths):
+         distros.Distro.__init__(self, name, cfg, paths)
+-- 
+2.1.0
+

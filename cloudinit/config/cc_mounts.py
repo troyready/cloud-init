@@ -2,9 +2,11 @@
 #
 #    Copyright (C) 2009-2010 Canonical Ltd.
 #    Copyright (C) 2012 Hewlett-Packard Development Company, L.P.
+#    Copyright (C) 2014-2015 Amazon.com, Inc. or its affiliates.
 #
 #    Author: Scott Moser <scott.moser@canonical.com>
 #    Author: Juerg Haefliger <juerg.haefliger@hp.com>
+#    Author: Andrew Jorgensen <ajorgens@amazon.com>
 #
 #    This program is free software: you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License version 3, as
@@ -251,8 +253,7 @@ def handle(_name, cfg, cloud, log, _args):
         start = str(cfgmnt[i][0])
         sanitized = sanitize_devname(start, cloud.device_name_to_device, log)
         if sanitized is None:
-            log.debug("Ignorming nonexistant named mount %s", start)
-            continue
+            log.debug("Ignoring nonexistent named mount %s", start)
 
         if sanitized != start:
             log.debug("changed %s => %s" % (start, sanitized))
@@ -310,7 +311,7 @@ def handle(_name, cfg, cloud, log, _args):
     # if the second field is None (not the string, the value) we skip it
     actlist = []
     for x in cfgmnt:
-        if x[1] is None:
+        if None in (x[0], x[1]):
             log.debug("Skipping non-existent device named %s", x[0])
         else:
             actlist.append(x)

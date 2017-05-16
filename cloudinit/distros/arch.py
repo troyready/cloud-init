@@ -33,7 +33,7 @@ class Distro(distros.Distro):
     locale_conf_fn = "/etc/locale.gen"
     network_conf_dir = "/etc/netctl"
     resolve_conf_fn = "/etc/resolv.conf"
-    init_cmd = ['systemctl']  # init scripts
+    init_cmd = "systemctl"  # init scripts
 
     def __init__(self, name, cfg, paths):
         distros.Distro.__init__(self, name, cfg, paths)
@@ -117,13 +117,6 @@ class Distro(distros.Distro):
             if not self._bring_up_interface(d):
                 return False
         return True
-
-    def _select_hostname(self, hostname, fqdn):
-        # Prefer the short hostname over the long
-        # fully qualified domain name
-        if not hostname:
-            return fqdn
-        return hostname
 
     def _write_hostname(self, your_hostname, out_fn):
         conf = None
